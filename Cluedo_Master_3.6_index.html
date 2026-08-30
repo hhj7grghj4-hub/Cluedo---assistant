@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cluedo Master 3.0</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111;background:#f2f2f7}*{box-sizing:border-box}
+body{margin:0}main{max-width:780px;margin:auto;padding:14px}.card{background:#fff;border-radius:18px;padding:15px;margin:11px 0;box-shadow:0 1px 5px #0001}
+h1{font-size:27px;margin:2px 0}.muted{color:#667085;font-size:13px;line-height:1.4}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button,select{font:inherit}button{min-height:44px;border:1px solid #d8d8dd;border-radius:11px;background:#fff;padding:9px 11px;font-weight:650}
+button.primary{background:#111;color:#fff;border-color:#111;width:100%}.chips{display:flex;flex-wrap:wrap;gap:7px}.chip.on{background:#111;color:#fff;border-color:#111}
+select{width:100%;min-height:44px;border:1px solid #ccc;border-radius:10px;padding:8px;background:#fff}
+.bar{height:8px;background:#e5e5e7;border-radius:8px;overflow:hidden}.fill{height:100%;background:#111}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:7px 4px;border-bottom:1px solid #eee;text-align:left}
+.big{font-size:18px;font-weight:800}.warn{background:#fff3cd;padding:10px;border-radius:11px}.good{background:#eaf7ea;padding:10px;border-radius:11px}
+@media(max-width:430px){.grid{grid-template-columns:1fr}}
+</style></head><body><main id="app">
+<h1>🕵️ Cluedo Master 3.0</h1>
+<p class="muted">Exact logic + probability + best-information strategy. The app only uses information you could legally know.</p>
+
+<section class="card"><h2>⚙️ Game setup</h2><div class="grid"><select id="playerCount"><option value="4">4 players</option><option value="5">5 players</option><option value="6">6 players</option></select><select id="mySeat"><option value="ME">I am first</option><option value="P2">I am second</option><option value="P3">I am third</option><option value="P4">I am fourth</option></select></div><p class="muted">The responder order is P2 → P3 → P4, excluding the asker. The first SHOWED ends that suggestion.</p></section>
+
+<section class="card"><h2>🎴 Your cards</h2><div id="mine" class="chips"></div><button id="save" class="primary" style="margin-top:10px">SAVE MY CARDS</button></section>
+
+<section class="card"><div id="roundBadge" class="big" style="margin-bottom:8px;padding:10px;border-radius:12px;background:#111;color:#fff;text-align:center">ROUND 1</div><h2>🔎 Record a suggestion</h2>
+<div class="grid"><select id="sus"></select><select id="wep"></select><select id="room"></select><select id="asker"></select></div>
+<p class="muted">For the players before the first SHOWED: choose NONE. For the first player who showed: choose SHOWED. Do not enter players after SHOWED.</p>
+<div id="resp"></div>
+<div id="seenWrap"></div>
+<div class="grid" style="margin-top:10px"><button id="clearRound" type="button">CLEAR CURRENT</button><button id="add" class="primary">SAVE ROUND & NEXT ROUND</button></div>
+</section>
+
+<section class="card"><h2>🔥 Master Decision</h2><div id="decision"></div></section>
+<section class="card"><h2>🔒 Solution probabilities</h2><div id="solution"></div></section>
+<section class="card"><h2>👥 Card ownership</h2><div id="owners"></div></section>
+<section class="card"><h2>🧠 Why?</h2><div id="why" class="muted"></div></section>
+<section class="card"><h2>📝 Game log</h2><div id="log" class="muted"></div><button id="undo">UNDO</button><button id="reset">RESET</button></section>
+</main>
+<script>
+(()=>{
+const S=['Miss Scarlett','Colonel Mustard','Mrs. White','Mr. Green','Mrs. Peacock','Professor Plum'],
+W=['Knife','Candlestick','Revolver','Rope','Lead Pipe','Wrench'],
+R=['Kitchen','Ballroom','Conservatory','Dining Room','Billiard Room','Library','Lounge','Hall','Study'],C=[...S,...W,...R];
+const players=['ME','P2','P3','P4'];let mine=new Set(),rounds=[],sel={s:S[0],w:W[0],r:R[0],a:'ME'};
+const $=x=>document.getElementById(x), opts=a=>a.map(x=>`<option>${x}</option>`).join('');
+$('sus').innerHTML=opts(S);$('wep').innerHTML=opts(W);$('room').innerHTML=opts(R);$('asker').innerHTML=opts(players);
+function chipGroup(id,a,key){$(id).innerHTML=a.map(x=>`<button type="button" class="chip ${sel[key]===x?'on':''}" data-k="${key}" data-v="${x}">${x}</button>`).join('');$(id).querySelectorAll('button').forEach(b=>b.onclick=()=>{sel[b.dataset.k]=b.dataset.v;chipGroup(id,a,key)})}
+function renderMine(){$('mine').innerHTML=C.map(c=>`<button type="button" class="chip ${mine.has(c)?'on':''}" data-c="${c}">${mine.has(c)?'✓ ':''}${c}</button>`).join('');$('mine').querySelectorAll('button').forEach(b=>b.onclick=()=>{mine.has(b.dataset.c)?mine.delete(b.dataset.c):mine.add(b.dataset.c);renderMine();renderAll()})}
+function renderResp(){
+ const asker=sel.a;
+ const order=['P2','P3','P4'].filter(p=>p!==asker);
+ let html='<div class="muted">Unosi samo igrače koji su stvarno odgovorili, redom. Kad prvi igrač pokaže kartu, unos završava.</div>';
+ html+='<div id="answerRows" style="margin-top:10px"></div>';
+ $('resp').innerHTML=html;
+ renderAnswerRows(order);
+ $('seenWrap').innerHTML='';
+}
+function renderAnswerRows(order){
+ const rows=$('answerRows');
+ let stopped=false, html='';
+ for(const p of order){
+   if(stopped) break;
+   html+=`<div class="cc-row" data-row="${p}" style="border-top:1px solid #eee;padding:10px 0">
+     <div style="font-weight:700;margin-bottom:6px">${p}</div>
+     <div class="grid">
+       <button type="button" data-answer="${p}" data-value="NONE">NONE — nema nijednu</button>
+       <button type="button" data-answer="${p}" data-value="SHOWED">SHOWED — pokazao</button>
+     </div>
+   </div>`;
+ }
+ rows.innerHTML=html || '<div class="muted">Nema drugih igrača za unos.</div>';
+ rows.querySelectorAll('[data-answer]').forEach(b=>b.addEventListener('click',()=>{
+   const p=b.dataset.answer, v=b.dataset.value;
+   const row=b.closest('.cc-row');
+   row.dataset.value=v;
+   row.querySelectorAll('button').forEach(x=>x.disabled=true);
+   row.innerHTML=`<div style="font-weight:700">${p}</div><div class="good" style="margin-top:6px">${v==='NONE'?'❌ NONE — nema nijednu':'👁️ SHOWED — pokazao kartu'}</div>`;
+   if(v==='SHOWED'){
+     // All players after the first showing player are not asked.
+     let next=row.nextElementSibling;
+     while(next){next.remove();next=rows.querySelector('.cc-row') ? null : null}
+     // Add the card-seen selector only when the user is the asker.
+     if(asker==='ME'){
+       $('seenWrap').innerHTML=`<p class="muted" style="margin-top:12px">Ako si ti dobio kartu i vidio si je, izaberi je. Ako nisi vidio, ostavi prazno.</p>
+       <select id="seen"><option value="">Nisam vidio kartu</option>${opts(C)}</select>`;
+     } else $('seenWrap').innerHTML='';
+   }
+ }));
+}
+renderMine();renderResp();
+
+function consistent(h,e){
+ const t=[e.s,e.w,e.r];let stopped=false;
+ for(const p of ['P2','P3','P4']){if(p===e.a)continue;const v=e.res[p]||'';if(!v||stopped)continue;
+  if(v==='NONE'&&t.some(c=>h[p].has(c)))return false;
+  if(v==='SHOWED'){if(!t.some(c=>h[p].has(c)))return false;stopped=true}
+ }
+ if(e.seen&&!h.ME.has(e.seen))return false;
+ return true;
+}
+function validWorld(h){return rounds.every(e=>consistent(h,e))}
+function makeWorld(){
+ let sol=[S[Math.random()*S.length|0],W[Math.random()*W.length|0],R[Math.random()*R.length|0]];
+ if(sol.some(c=>mine.has(c)))return null;
+ let h={SOLUTION:new Set(sol),ME:new Set(mine),P2:new Set(),P3:new Set(),P4:new Set()};
+ let pool=C.filter(c=>!mine.has(c)&&!sol.includes(c)).sort(()=>Math.random()-.5);
+ const others=['P2','P3','P4'];
+ pool.forEach((c,i)=>h[others[i%3]].add(c));
+ return validWorld(h)?h:null;
+}
+function analyze(){
+ let count={};C.forEach(c=>count[c]={SOLUTION:0,ME:mine.has(c)?1:0,P2:0,P3:0,P4:0});
+ let worlds=0,tries=0;
+ const target=8000, maxTries=100000;
+ while(worlds<target&&tries<maxTries){tries++;let h=makeWorld();if(!h)continue;worlds++;C.forEach(c=>Object.keys(count[c]).forEach(p=>{if(h[p].has(c))count[c][p]++}))}
+ return worlds?{count,n:worlds}:null;
+}
+function cardProb(d,c,p){return d.count[c][p]/d.n}
+function bestSuggestion(d){
+ let best=null;
+ for(const s of S)for(const w of W)for(const r of R){
+  const t=[s,w,r];let uncertainty=0;
+  // Information score: prefer cards with ownership probabilities spread across opponents/solution.
+  for(const c of t){let probs=['SOLUTION','P2','P3','P4'].map(p=>cardProb(d,c,p));let entropy=0;probs.forEach(q=>{if(q>0)entropy-=q*Math.log2(q)});uncertainty+=entropy}
+  if(!best||uncertainty>best.score)best={s,w,r,score:uncertainty};
+ }
+ return best;
+}
+function renderAll(){
+ $('roundBadge').textContent='ROUND '+(rounds.length+1);
+ const d=analyze();if(!d){$('decision').innerHTML='<div class="warn"><b>Nema konzistentnog scenarija.</b><br>Provjeri da li si ispravno unio redoslijed NONE/SHOWED.</div>';renderHistory();return}
+ const rankCat=a=>a.map(c=>[c,cardProb(d,c,'SOLUTION')]).sort((x,y)=>y[1]-x[1]);
+ const bs=rankCat(S),bw=rankCat(W),br=rankCat(R),move=bestSuggestion(d);
+ $('decision').innerHTML=`<div class="good"><div class="big">BEST INFORMATION MOVE</div><div style="margin-top:6px">${move.s} + ${move.w} + ${move.r}</div><div class="muted">Score ${move.score.toFixed(2)} — bira karte koje trenutno najviše razdvajaju moguće scenarije.</div></div><p class="muted">Ako već imaš praktično riješeno rješenje, prvo pogledaj procente ispod prije optužbe.</p>`;
+ const block=(title,a)=>`<h3>${title}</h3>`+a.slice(0,4).map(x=>`<div><b>${x[0]}</b> — ${Math.round(x[1]*100)}%</div><div class="bar"><div class="fill" style="width:${Math.min(100,Math.round(x[1]*100))}%"></div></div>`).join('');
+ $('solution').innerHTML=block('👤 Suspect',bs)+block('🔪 Weapon',bw)+block('🏠 Room',br);
+ let rows=[];C.forEach(c=>{let z=['SOLUTION','P2','P3','P4'].map(p=>[p,cardProb(d,c,p)]).sort((a,b)=>b[1]-a[1]);rows.push([c,z[0][0],z[0][1]])});rows.sort((a,b)=>b[2]-a[2]);
+ $('owners').innerHTML='<table><tr><th>Card</th><th>Most likely</th><th>Chance</th></tr>'+rows.slice(0,15).map(x=>`<tr><td>${x[0]}</td><td>${x[1]==='SOLUTION'?'🔒 Solution':x[1]}</td><td>${Math.round(x[2]*100)}%</td></tr>`).join('')+'</table><p class="muted">These are probabilities over scenarios consistent with your entered observations.</p>';
+ $('why').innerHTML=rounds.length?`The engine currently uses ${d.n.toLocaleString()} consistent scenarios and all ${rounds.length} recorded rounds. A SHOWED to another player is never treated as a specific card.`:'Start by entering your cards and the rounds you observe.';
+ $('log').innerHTML=rounds.length?rounds.map((e,i)=>`<div style="margin:8px 0"><b>R${e.number||i+1}</b> — ${e.a}<br>${e.s} + ${e.w} + ${e.r}<br>${Object.entries(e.res).filter(x=>x[1]).map(x=>x[0]+': '+x[1]).join(' · ')}${e.seen?' · 👁 '+e.seen:''}</div><hr>`).join(''):'No rounds yet.';
+}
+$('clearRound').onclick=()=>{sel={s:S[0],w:W[0],r:R[0],a:'ME'};$('sus').value=S[0];$('wep').value=W[0];$('room').value=R[0];$('asker').value='ME';renderResp();};
+$('add').onclick=()=>{
+ let res={};let answered=false;let stopped=false;
+ root.querySelectorAll('#answerRows .cc-row').forEach(row=>{
+   const p=row.dataset.row, v=row.dataset.value;
+   if(!stopped && v){res[p]=v;answered=true;if(v==='SHOWED')stopped=true;}
+ });
+ const seenEl=$('seen');
+ const seen=seenEl?seenEl.value:'';
+ if(!answered && !seen){alert('Unesi barem jedan odgovor iz ove runde.');return;}
+ rounds.push({number:rounds.length+1,s:$('sus').value,w:$('wep').value,r:$('room').value,a:$('asker').value,res,seen});
+ sel={s:S[0],w:W[0],r:R[0],a:'ME'};
+ $('sus').value=S[0];$('wep').value=W[0];$('room').value=R[0];$('asker').value='ME';
+ renderResp();renderAll();window.scrollTo(0,0);
+ $('roundBadge').textContent='ROUND '+(rounds.length+1); alert('Runda '+rounds.length+' je sačuvana. Sada je na redu Runda '+(rounds.length+1)+'.');
+};
+$('save').onclick=renderAll;$('undo').onclick=()=>{if(rounds.length){rounds.pop();renderAll()}};$('reset').onclick=()=>{if(confirm('Obrisati cijelu partiju?')){mine=new Set();rounds=[];renderMine();renderResp();renderAll();}};renderAll();
+})();
+</script></body></html>
