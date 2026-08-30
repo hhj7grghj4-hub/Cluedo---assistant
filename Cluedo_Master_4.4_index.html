@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Cluedo Master 4.1</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111;background:#f2f2f7}
+*{box-sizing:border-box}body{margin:0}main{max-width:760px;margin:auto;padding:14px}
+.card{background:#fff;border-radius:18px;padding:15px;margin:11px 0;box-shadow:0 1px 5px #0001}
+h1{font-size:28px;margin:0 0 4px}.muted{color:#667085;font-size:13px;line-height:1.45}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button,select{font:inherit;min-height:44px;border-radius:11px;padding:9px 11px}
+button{border:1px solid #d8d8dd;background:#fff;font-weight:700}button.primary{background:#111;color:#fff;border-color:#111;width:100%}
+button.on{background:#111;color:#fff;border-color:#111}button:disabled{opacity:.45}
+select{width:100%;border:1px solid #ccc;background:#fff}.badge{background:#111;color:#fff;border-radius:12px;padding:10px;text-align:center;font-weight:800;font-size:18px}
+.good{background:#eaf7ea;border-radius:12px;padding:10px}.warn{background:#fff3cd;border-radius:12px;padding:10px}
+.bar{height:8px;background:#e5e5e7;border-radius:8px;overflow:hidden;margin:3px 0 9px}.fill{height:100%;background:#111}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:7px 4px;border-bottom:1px solid #eee;text-align:left}
+.answerRow{border-top:1px solid #eee;padding:10px 0}.answerRow .title{font-weight:800;margin-bottom:7px}
+.orderRow{display:flex;align-items:center;gap:8px;margin:7px 0}.orderNum{width:30px;font-weight:800}
+@media(max-width:430px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body><main>
+<h1>🕵️ Cluedo Master</h1>
+<div class="muted">Record what you actually know. Player answers stay visible even if entered out of order.</div>
+
+<section class="card">
+<h2>🎴 My cards</h2><div class="muted">Tap your cards. They are saved immediately.</div>
+<div id="mine" class="grid" style="margin-top:9px"></div>
+<div id="mineStatus" class="good" style="margin-top:10px">0 cards selected.</div>
+</section>
+
+<section class="card">
+<div id="roundBadge" class="badge">ROUND 1</div>
+<h2>🔎 Suggestion</h2>
+<div class="grid">
+<div><div class="muted">Suspect</div><select id="suspect"></select></div>
+<div><div class="muted">Weapon</div><select id="weapon"></select></div>
+<div><div class="muted">Room</div><select id="room"></select></div>
+<div><div class="muted">Who made the suggestion?</div><select id="asker"></select></div>
+</div>
+
+<h3 style="margin-bottom:5px">Players' answers</h3>
+<div class="muted">Choose <b>SHOWED</b> or <b>NO SHOW</b> for every player who could answer. You can enter them in any order. Nothing disappears. The asker is excluded because they made the suggestion.</div>
+<div id="answers"></div>
+
+<h3 style="margin-bottom:5px">Actual answer order</h3>
+<div class="muted">Set the real order in which players got the chance to answer. This is separate from the order you tapped the buttons.</div>
+<div id="order"></div>
+
+<div id="seenArea" style="margin-top:10px"></div>
+<div class="grid" style="margin-top:10px">
+<button id="clearRound">CLEAR ROUND</button>
+<button id="saveRound" class="primary">SAVE & NEXT ROUND</button>
+</div>
+<div id="roundMessage" class="muted" style="margin-top:8px"></div>
+</section>
+
+<section class="card"><h2>🔥 Master Decision</h2><div id="decision"></div></section>
+<section class="card"><h2>🔒 Solution</h2><div id="solution"></div></section>
+<section class="card"><h2>👥 Card ownership</h2><div id="owners"></div></section>
+<section class="card"><h2>🧠 Why?</h2><div id="why" class="muted"></div></section>
+<section class="card"><h2>📝 Rounds</h2><div id="log" class="muted">No rounds yet.</div><div class="grid" style="margin-top:10px"><button id="undo">UNDO LAST</button><button id="reset">RESET GAME</button></div></section>
+</main>
+
+<script>
+(function(){
+"use strict";
+var S=["Miss Scarlett","Colonel Mustard","Mrs. White","Mr. Green","Mrs. Peacock","Professor Plum"];
+var W=["Knife","Candlestick","Revolver","Rope","Lead Pipe","Wrench"];
+var R=["Kitchen","Ballroom","Conservatory","Dining Room","Billiard Room","Library","Lounge","Hall","Study"];
+var C=S.concat(W,R), players=["ME","P2","P3","P4"];
+var mine=new Set(), rounds=[];
+var current={s:S[0],w:W[0],r:R[0],a:"ME",answers:{},order:[]};
+var $=function(id){return document.getElementById(id);};
+
+function fill(id,arr){
+  var el=$(id);el.innerHTML="";
+  arr.forEach(function(x){var o=document.createElement("option");o.value=x;o.textContent=x;el.appendChild(o);});
+}
+fill("suspect",S);fill("weapon",W);fill("room",R);fill("asker",players);
+
+function syncCurrent(){
+ current.s=$("suspect").value;current.w=$("weapon").value;current.r=$("room").value;current.a=$("asker").value;
+}
+function renderMine(){
+ var box=$("mine");box.innerHTML="";
+ C.forEach(function(c){
+  var b=document.createElement("button");b.type="button";b.className=mine.has(c)?"on":"";
+  b.textContent=(mine.has(c)?"✓ ":"")+c;
+  b.addEventListener("click",function(){if(mine.has(c))mine.delete(c);else mine.add(c);renderMine();renderAll();});
+  box.appendChild(b);
+ });
+ $("mineStatus").textContent=mine.size+" card"+(mine.size===1?"":"s")+" selected.";
+}
+function renderAnswers(){
+ syncCurrent();
+ var order=players.filter(function(p){return p!==current.a;});
+ var box=$("answers");box.innerHTML="";
+ order.forEach(function(p){
+  var row=document.createElement("div");row.className="answerRow";row.dataset.player=p;
+  var title=document.createElement("div");title.className="title";title.textContent=p;
+  var grid=document.createElement("div");grid.className="grid";
+  ["SHOWED","NO SHOW"].forEach(function(v){
+   var b=document.createElement("button");b.type="button";b.textContent=v;b.className=current.answers[p]===v?"on":"";
+   b.addEventListener("click",function(){current.answers[p]=v;renderAnswers();renderOrder();renderSeen();});
+   grid.appendChild(b);
+  });
+  row.appendChild(title);row.appendChild(grid);
+  if(current.answers[p]){var st=document.createElement("div");st.className=current.answers[p]==="SHOWED"?"good":"warn";st.style.marginTop="6px";st.textContent=current.answers[p]==="SHOWED"?"👁️ SHOWED":"❌ NO SHOW";row.appendChild(st);}
+  box.appendChild(row);
+ });
+}
+function renderOrder(){
+ syncCurrent();
+ var eligible=players.filter(function(p){return p!==current.a;});
+ var box=$("order");box.innerHTML="";
+ var available=eligible.filter(function(p){return current.answers[p];});
+ if(!available.length){box.innerHTML='<div class="muted">First choose SHOWED / NO SHOW above.</div>';return;}
+ available.forEach(function(p,i){
+  var row=document.createElement("div");row.className="orderRow";
+  var num=document.createElement("span");num.className="orderNum";num.textContent=(i+1)+".";
+  var sel=document.createElement("select");
+  available.forEach(function(x){var o=document.createElement("option");o.value=x;o.textContent=x;sel.appendChild(o);});
+  sel.value=current.order[i]||p;
+  sel.addEventListener("change",function(){
+    var vals=Array.from(box.querySelectorAll("select")).map(function(x){return x.value;});
+    current.order=vals;renderOrder();
+  });
+  row.appendChild(num);row.appendChild(sel);box.appendChild(row);
+ });
+ // Remove duplicates by normalizing order to the currently displayed sequence.
+ var vals=Array.from(box.querySelectorAll("select")).map(function(x){return x.value;});
+ var uniq=[];vals.forEach(function(x){if(uniq.indexOf(x)<0)uniq.push(x);});
+ available.forEach(function(x){if(uniq.indexOf(x)<0)uniq.push(x);});
+ current.order=uniq;
+}
+function renderSeen(){
+ $("seenArea").innerHTML="";
+ if(current.a!=="ME")return;
+ var showed=current.order.find(function(p){return current.answers[p]==="SHOWED";});
+ if(!showed)return;
+ var label=document.createElement("div");label.className="muted";label.textContent="You made the suggestion and "+showed+" showed you a card. If you saw it, select it.";
+ var sel=document.createElement("select");sel.id="seenCard";
+ var blank=document.createElement("option");blank.value="";blank.textContent="I did not see the card";sel.appendChild(blank);
+ C.forEach(function(c){var o=document.createElement("option");o.value=c;o.textContent=c;sel.appendChild(o);});
+ if(current.seen)sel.value=current.seen;
+ sel.addEventListener("change",function(){current.seen=sel.value;});
+ $("seenArea").appendChild(label);$("seenArea").appendChild(sel);
+}
+function clearRound(){
+ current={s:S[0],w:W[0],r:R[0],a:"ME",answers:{},order:[],seen:""};
+ $("suspect").value=S[0];$("weapon").value=W[0];$("room").value=R[0];$("asker").value="ME";
+ renderAnswers();renderOrder();renderSeen();
+}
+function saveRound(){
+ syncCurrent();
+ var answered=Object.keys(current.answers).length>0;
+ if(!answered){$("roundMessage").textContent="Choose SHOWED or NO SHOW for at least one player.";return;}
+ var actualOrder=current.order.filter(function(p){return current.answers[p];});
+ if(actualOrder.length!==Object.keys(current.answers).length){
+  $("roundMessage").textContent="Set the actual answer order for all answered players.";return;
+ }
+ var seenEl=$("seenCard"),seen=seenEl?seenEl.value:(current.seen||"");
+ rounds.push({number:rounds.length+1,s:current.s,w:current.w,r:current.r,a:current.a,answers:Object.assign({},current.answers),order:actualOrder.slice(),seen:seen});
+ clearRound();$("roundMessage").textContent="Round "+rounds.length+" saved. You are now on ROUND "+(rounds.length+1)+".";
+ renderAll();
+}
+function valid(h,e){
+ var trio=[e.s,e.w,e.r],stopped=false;
+ for(var i=0;i<e.order.length;i++){
+  var p=e.order[i],v=e.answers[p];
+  if(stopped)continue;
+  if(v==="NO SHOW" && trio.some(function(c){return h[p].has(c);}))return false;
+  if(v==="SHOWED"){
+   if(!trio.some(function(c){return h[p].has(c);}))return false;
+   stopped=true;
+  }
+ }
+ if(e.seen && !h.ME.has(e.seen))return false;
+ return true;
+}
+function world(){
+ var sol=[S[Math.floor(Math.random()*S.length)],W[Math.floor(Math.random()*W.length)],R[Math.floor(Math.random()*R.length)]];
+ if(sol.some(function(c){return mine.has(c);}))return null;
+ var h={SOLUTION:new Set(sol),ME:new Set(mine),P2:new Set(),P3:new Set(),P4:new Set()};
+ var pool=C.filter(function(c){return !mine.has(c)&&sol.indexOf(c)<0;});
+ for(var i=pool.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=pool[i];pool[i]=pool[j];pool[j]=t;}
+ pool.forEach(function(c,i){h[["P2","P3","P4"][i%3]].add(c);});
+ for(var k=0;k<rounds.length;k++)if(!valid(h,rounds[k]))return null;
+ return h;
+}
+function solutionPossible(sol){
+  if(sol.some(function(c){return mine.has(c);})) return false;
+
+  var hBase={SOLUTION:new Set(sol),ME:new Set(mine),P2:new Set(),P3:new Set(),P4:new Set()};
+  var pool=C.filter(function(c){return !mine.has(c)&&sol.indexOf(c)<0;});
+
+  // Backtracking deal for P2/P3/P4. We only need to know whether at least
+  // one legal ownership assignment exists for this particular solution.
+  function rec(i,h){
+    if(i===pool.length){
+      for(var k=0;k<rounds.length;k++) if(!valid(h,rounds[k])) return false;
+      return true;
+    }
+    var p=["P2","P3","P4"][i%3];
+    h[p].add(pool[i]);
+    if(rec(i+1,h)) return true;
+    h[p].delete(pool[i]);
+    return false;
+  }
+  // First use the same fast balanced-deal structure as the game; this is a
+  // feasibility check, not the probability estimator.
+  pool.forEach(function(c,i){hBase[["P2","P3","P4"][i%3]].add(c);});
+  if(valid(hBase,rounds)) return true;
+
+  // If that balanced deal fails, try a bounded set of shuffled deals.
+  for(var t=0;t<250;t++){
+    var h={SOLUTION:new Set(sol),ME:new Set(mine),P2:new Set(),P3:new Set(),P4:new Set()};
+    var q=pool.slice();
+    for(var i=q.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),tmp=q[i];q[i]=q[j];q[j]=tmp;}
+    q.forEach(function(c,i){h[["P2","P3","P4"][i%3]].add(c);});
+    if(valid(h,rounds)) return true;
+  }
+  return false;
+}
+
+function analyze(){
+  var solutionCounts={SOLUTION:[],n:0};
+  var validSolutions=[];
+  S.forEach(function(sus){
+    W.forEach(function(wep){
+      R.forEach(function(room){
+        if(solutionPossible([sus,wep,room])) validSolutions.push([sus,wep,room]);
+      });
+    });
+  });
+  if(!validSolutions.length) return null;
+
+  var count={};
+  C.forEach(function(c){count[c]={SOLUTION:0,ME:mine.has(c)?1:0,P2:0,P3:0,P4:0};});
+  validSolutions.forEach(function(sol){
+    sol.forEach(function(c){count[c].SOLUTION++;});
+  });
+
+  // Keep ownership estimates from a large compatible sample, but solution
+  // probabilities are now exact over the surviving 324 candidate solutions.
+  var ownerWorlds=0,tries=0;
+  while(ownerWorlds<3500 && tries<45000){
+    tries++;var h=world();if(!h)continue;ownerWorlds++;
+    C.forEach(function(c){["ME","P2","P3","P4"].forEach(function(p){if(h[p].has(c))count[c][p]++;});});
+  }
+  return {count:count,n:validSolutions.length,ownerN:ownerWorlds,solutions:validSolutions};
+}
+function prob(d,c,p){var den=(p==="SOLUTION"?d.n:d.ownerN);return den?d.count[c][p]/den:0;}
+function best(d){
+  var candidates=d.solutions;
+  if(!candidates || !candidates.length) return null;
+  var bestMove=null;
+
+  S.forEach(function(sus){W.forEach(function(wep){R.forEach(function(room){
+    var trio=[sus,wep,room], groups={};
+    candidates.forEach(function(sol){
+      // Signature captures which cards of the suggestion are in the solution.
+      // This is the information a suggestion can distinguish about the case.
+      var sig=trio.map(function(c){return sol.indexOf(c)>=0?"1":"0";}).join("");
+      groups[sig]=(groups[sig]||0)+1;
+    });
+    var entropy=0;
+    Object.keys(groups).forEach(function(k){
+      var q=groups[k]/candidates.length;
+      entropy-=q*Math.log2(q);
+    });
+    if(!bestMove || entropy>bestMove.score){
+      bestMove={s:sus,w:wep,r:room,score:entropy};
+    }
+  });});});
+  return bestMove;
+}
+
+function explanation(d){
+  var lines=[];
+  if(!rounds.length) return "Još nema dovoljno informacija. Unesi svoje karte i prve odgovore.";
+  lines.push("Poslije "+rounds.length+" sačuvane"+(rounds.length===1?" runde":" rundi")+" ostalo je "+d.n+" moguć"+(d.n===1?"e rješenje":"ih rješenja")+" od ukupno 324.");
+  if(d.n===1){
+    lines.push("Solver je ostavio samo jednu kombinaciju koja je kompatibilna sa svim unesenim činjenicama.");
+  }else{
+    var topS=S.map(function(c){return [c,prob(d,c,"SOLUTION")];}).sort(function(a,b){return b[1]-a[1];})[0];
+    var topW=W.map(function(c){return [c,prob(d,c,"SOLUTION")];}).sort(function(a,b){return b[1]-a[1];})[0];
+    var topR=R.map(function(c){return [c,prob(d,c,"SOLUTION")];}).sort(function(a,b){return b[1]-a[1];})[0];
+    lines.push("Trenutno najjači kandidati su: "+topS[0]+" ("+Math.round(topS[1]*100)+"%), "+topW[0]+" ("+Math.round(topW[1]*100)+"%), "+topR[0]+" ("+Math.round(topR[1]*100)+"%).");
+  }
+  var last=rounds[rounds.length-1];
+  var firstShow=last.order.find(function(x){return last.answers[x]==="SHOWED";});
+  if(firstShow) lines.push("U zadnjoj rundi "+firstShow+" je prvi SHOWED, pa samo on dobija mogućnost da ima jednu od tri navedene karte; igrači poslije njega nisu tretirani kao da su odgovorili.");
+  last.order.forEach(function(p){if(last.answers[p]==="NO SHOW")lines.push(p+" je označen NO SHOW, pa nijedna od tri karte iz te runde nije kod tog igrača.");});
+  if(last.seen) lines.push("Vidjena karta "+last.seen+" je tretirana kao sigurna karta kod tebe.");
+  return lines.join(" ");
+}
+function renderAll(){
+  $("roundBadge").textContent="ROUND "+(rounds.length+1);
+  var d=analyze();
+  if(!d){
+    $("decision").innerHTML='<div class="warn"><b>NO CONSISTENT SCENARIO</b><br>Provjeri odgovore i stvarni redoslijed u zadnjoj rundi.</div>';
+    $("solution").innerHTML="";$("owners").innerHTML="";
+    $("why").textContent="Neke unesene informacije se međusobno isključuju.";
+    renderLog();return;
+  }
+
+  var bm=best(d);
+  if(bm){
+    $("decision").innerHTML='<div class="good"><b>🎯 BEST INFORMATION MOVE</b><div style="font-size:18px;font-weight:800;margin-top:5px">'+bm.s+" + "+bm.w+" + "+bm.r+'</div><div class="muted">Information score: '+bm.score.toFixed(3)+' · '+d.n+' possible solutions</div><div style="margin-top:8px">Ovaj prijedlog najbolje dijeli trenutno moguće slučajeve na različite ishode.</div></div>';
+  }else $("decision").textContent="Nema dovoljno podataka za preporuku.";
+
+  var rank=function(a){return a.map(function(c){return [c,prob(d,c,"SOLUTION")];}).sort(function(x,y){return y[1]-x[1];});};
+  var ss=rank(S),ww=rank(W),rr=rank(R);
+  function block(title,a){
+    return "<h3>"+title+"</h3>"+a.slice(0,3).map(function(x){
+      var pc=Math.round(x[1]*100);
+      return "<b>"+x[0]+"</b> — "+pc+"%<div class='bar'><div class='fill' style='width:"+pc+"%'></div></div>";
+    }).join("");
+  }
+  var certainty=d.n===1?"<div class='good'><b>🟢 SOLVED</b><br>Ostalo je samo jedno moguće rješenje.</div>":"<div class='muted'><b>"+d.n+"</b> possible solutions remain.</div>";
+  $("solution").innerHTML=certainty+block("👤 Suspect",ss)+block("🔪 Weapon",ww)+block("🏠 Room",rr);
+
+  var rows=C.map(function(c){
+    var v=["SOLUTION","ME","P2","P3","P4"].map(function(p){return [p,prob(d,c,p)];}).sort(function(x,y){return y[1]-x[1];});
+    return [c,v[0][0],v[0][1]];
+  }).sort(function(x,y){return y[2]-x[2];});
+  $("owners").innerHTML="<table><tr><th>Card</th><th>Most likely</th><th>Chance</th></tr>"+rows.slice(0,15).map(function(x){
+    return "<tr><td>"+x[0]+"</td><td>"+(x[1]==="SOLUTION"?"🔒 Solution":x[1])+"</td><td>"+Math.round(x[2]*100)+"%</td></tr>";
+  }).join("")+"</table>";
+
+  $("why").innerHTML="<b>How the engine knows:</b><br>"+explanation(d);
+  renderLog();
+}
+function renderLog(){
+ if(!rounds.length){$("log").textContent="No rounds yet.";return;}
+ $("log").innerHTML=rounds.map(function(e){
+  var a=Object.keys(e.answers).map(function(p){return p+": "+e.answers[p];}).join(" · ");
+  return "<div style='margin:9px 0'><b>R"+e.number+"</b> — "+e.a+"<br>"+e.s+" + "+e.w+" + "+e.r+"<br>"+a+"<br>Order: "+e.order.join(" → ")+(e.seen?" · 👁 "+e.seen:"")+"</div>";
+ }).join("");
+}
+["suspect","weapon","room","asker"].forEach(function(id){$(id).addEventListener("change",function(){renderAnswers();renderOrder();renderSeen();});});
+$("saveRound").addEventListener("click",saveRound);
+$("clearRound").addEventListener("click",function(){clearRound();$("roundMessage").textContent="Current round cleared.";});
+$("undo").addEventListener("click",function(){if(rounds.length){rounds.pop();renderAll();$("roundMessage").textContent="Last round undone.";}});
+$("reset").addEventListener("click",function(){if(confirm("Reset the entire game?")){mine=new Set();rounds=[];clearRound();$("roundMessage").textContent="Game reset.";renderAll();}});
+renderMine();renderAnswers();renderOrder();renderSeen();renderAll();
+})();
+</script></body></html>
