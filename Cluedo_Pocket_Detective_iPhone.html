@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Cluedo Pocket Detective</title>
+<style>
+body{margin:0;background:#f2f2f7;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111}
+main{max-width:760px;margin:auto;padding:14px}.card{background:#fff;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 1px 5px #0001}
+h1{margin:3px 0;font-size:28px}.muted{color:#666;font-size:13px;line-height:1.4}
+button{width:100%;border:0;border-radius:12px;padding:13px;margin:5px 0;font-size:16px;font-weight:700;background:#111;color:white}
+.secondary{background:#e8e8ed;color:#111}.danger{background:#b00020}
+select{width:100%;padding:12px;border:1px solid #ccc;border-radius:11px;background:#fff;font-size:16px;margin:4px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}.chip{padding:8px 10px;border-radius:18px;background:#eee;border:0;font-size:14px}.chip.on{background:#111;color:#fff}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:7px 4px;border-bottom:1px solid #eee;text-align:left}
+.bar{height:8px;background:#e5e5e7;border-radius:8px;overflow:hidden;margin:3px 0 8px}.fill{height:100%;background:#111}
+.warn{background:#fff3cd;padding:10px;border-radius:10px}
+</style>
+</head>
+<body><main>
+<h1>🕵️ Cluedo Pocket Detective</h1>
+<p class=muted>Designed for iPhone. No dropdowns are used for cards: tap them instead.</p>
+
+<div class=card>
+<h2>Game</h2>
+<div class=grid>
+<div><div class=muted>Players</div><select id=n><option>4</option><option>5</option><option>6</option></select></div>
+<div><div class=muted>Your position</div><select id=me></select></div>
+</div>
+</div>
+
+<div class=card><h2>🎴 My cards</h2><div id=my></div><button onclick=saveMine()>SAVE MY CARDS</button></div>
+
+<div class=card>
+<h2>🔎 New suggestion</h2>
+<div class=muted>Tap one card from each category.</div>
+<div id=sus class=chips></div><div id=wep class=chips></div><div id=room class=chips></div>
+<p class=muted>Who made this suggestion?</p><div id=ask class=chips></div>
+<div id=responses></div>
+<button onclick=saveEvent()>SAVE OBSERVATION</button>
+</div>
+
+<div class=card><h2>🔥 Best current theory</h2><div id=result></div></div>
+<div class=card><h2>📝 Log</h2><div id=log></div><button class=secondary onclick=undo()>UNDO</button><button class=danger onclick=resetAll()>RESET</button></div>
+</main>
+<script>
+const S=["Miss Scarlett","Colonel Mustard","Mrs. White","Mr. Green","Mrs. Peacock","Professor Plum"];
+const W=["Knife","Candlestick","Revolver","Rope","Lead Pipe","Wrench"];
+const R=["Kitchen","Ballroom","Conservatory","Dining Room","Billiard Room","Library","Lounge","Hall","Study"];
+const C=[...S,...W,...R];let N=4,MI=0,mine=new Set(),events=[],sel={s:S[0],w:W[0],r:R[0],a:"ME"};
+
+function player(i){return i===MI?"ME":"P"+(i+1)}
+function chips(id,arr,key){
+ const el=document.getElementById(id);el.innerHTML="";
+ arr.forEach(x=>{let b=document.createElement("button");b.className="chip"+(sel[key]===x?" on":"");b.textContent=x;b.onclick=()=>{sel[key]=x;chips(id,arr,key)};el.appendChild(b)})
+}
+function setup(){
+ N=+n.value;me.innerHTML="";
+ for(let i=0;i<N;i++){let o=document.createElement("option");o.value=i;o.textContent=i===0?"ME":"P"+(i+1);me.appendChild(o)}
+ MI=+me.value;refresh();renderAll()
+}
+function refresh(){
+ document.getElementById("my").innerHTML=C.map(c=>`<button class="chip ${mine.has(c)?"on":""}" onclick="toggleMine('${c.replace(/'/g,"\\'")}')">${mine.has(c)?"✓ ":""}${c}</button>`).join("");
+ chips("sus",S,"s");chips("wep",W,"w");chips("room",R,"r");chips("ask",Array.from({length:N},(_,i)=>player(i)),"a");renderResponses();
+}
+function toggleMine(c){mine.has(c)?mine.delete(c):mine.add(c);refresh()}
+function renderResponses(){
+ let el=document.getElementById("responses");el.innerHTML="<p class=muted>For each player asked before the first SHOWED, record NONE. For the first player who showed a card, record SHOWED. Players after that are not reached.</p>";
+ for(let i=0;i<N;i++){let p=player(i);if(p==="ME"||p===sel.a)continue;
+  el.innerHTML+=`<div><b>${p}</b><select id="v${i}"><option value="SKIP">SKIP</option><option value="NONE">NONE</option><option value="SHOWED">SHOWED</option></select></div>`;
+ }
+}
+function saveMine(){renderAll()}
+function saveEvent(){
+ let res={};for(let i=0;i<N;i++){let p=player(i),e=document.getElementById("v"+i);if(p!=="ME"&&p!==sel.a&&e)res[p]=e.value}
+ events.push({s:sel.s,w:sel.w,r:sel.r,a:sel.a,res});renderAll()
+}
+function undo(){events.pop();renderAll()}
+function resetAll(){if(confirm("Reset the whole game?")){mine=new Set();events=[];renderAll()}}
+function consistent(h,e){
+ let trio=[e.s,e.w,e.r],stopped=false;
+ for(let i=0;i<N;i++){let p=player(i);if(p==="ME"||p===e.a)continue;let v=e.res[p]||"SKIP";
+  if(v==="SKIP")continue;
+  if(stopped)continue;
+  if(v==="NONE"&&trio.some(c=>h[p].has(c)))return false;
+  if(v==="SHOWED"){if(!trio.some(c=>h[p].has(c)))return false;stopped=true}
+ }
+ return true
+}
+function sample(){
+ let sol=[S[Math.random()*S.length|0],W[Math.random()*W.length|0],R[Math.random()*R.length|0]];
+ if(sol.some(c=>mine.has(c)))return null;
+ let h={SOLUTION:new Set(sol)};for(let i=0;i<N;i++)h[player(i)]=new Set(i===MI?[...mine]:[]);
+ let others=[];for(let i=0;i<N;i++)if(i!==MI)others.push(player(i));
+ let pool=C.filter(c=>!mine.has(c)&&!sol.includes(c)).sort(()=>Math.random()-.5);
+ pool.forEach((c,j)=>h[others[j%others.length]].add(c));
+ for(let e of events)if(!consistent(h,e))return null;
+ return h
+}
+function analyze(){
+ let cnt={};C.forEach(c=>cnt[c]={SOLUTION:0});for(let i=0;i<N;i++)C.forEach(c=>cnt[c][player(i)]=0);
+ let ok=0,tries=0;while(ok<10000&&tries<100000){tries++;let h=sample();if(!h)continue;ok++;for(let c of C)for(let p in h)if(h[p].has(c))cnt[c][p]++}
+ if(!ok)return "<div class=warn><b>No consistent theory found.</b><br>Check your observations.</div>";
+ let groups=[["SUSPECT",S],["WEAPON",W],["ROOM",R]],out=`<p class=muted>Based on ${ok.toLocaleString()} consistent scenarios. These are estimates, not certainty.</p>`;
+ groups.forEach(([title,arr])=>{let x=arr.map(c=>[c,cnt[c].SOLUTION/ok]).sort((a,b)=>b[1]-a[1]);out+=`<h3>🔒 ${title} most likely in solution</h3>`;x.slice(0,3).forEach(q=>out+=`<b>${q[0]}</b> — ${Math.round(q[1]*100)}%<div class=bar><div class=fill style="width:${Math.round(q[1]*100)}%"></div></div>`)});
+ let strong=[];for(let c of C){let z=Object.entries(cnt[c]).sort((a,b)=>b[1]-a[1])[0];if(z[1]/ok>=.7)strong.push([c,z[0],z[1]/ok])}
+ strong.sort((a,b)=>b[2]-a[2]);out+="<h3>📌 Strongest ownership clues</h3><table><tr><th>Card</th><th>Likely</th><th>%</th></tr>";
+ strong.slice(0,15).forEach(x=>out+=`<tr><td>${x[0]}</td><td>${x[1]==="SOLUTION"?"🔒 SOLUTION":x[1]}</td><td>${Math.round(x[2]*100)}%</td></tr>`);out+="</table>";return out
+}
+function renderAll(){refresh();result.innerHTML=analyze();log.innerHTML=events.length?events.map((e,i)=>`<div><b>R${i+1}</b> — ${e.a}: ${e.s} + ${e.w} + ${e.r}<br>${Object.entries(e.res).filter(x=>x[1]!=="SKIP").map(x=>x[0]+": "+x[1]).join(" · ")}</div><hr>`).join(""):"No observations yet."}
+n.onchange=()=>{N=+n.value;events=[];mine=new Set();setup()};me.onchange=()=>{MI=+me.value;refresh();renderAll()};
+setup();
+</script></body></html>
